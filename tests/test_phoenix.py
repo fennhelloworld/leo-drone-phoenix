@@ -658,3 +658,165 @@ def run_all_tests():
 if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1)
+
+
+# ===========================================================================
+# New Module Tests (v2.0 additions)
+# ===========================================================================
+
+class TestWeatherRemoteSensing(unittest.TestCase):
+    """T51-T53: Weather & Water Remote Sensing"""
+    
+    def test_wind_estimation(self):
+        from weather_remote_sensing import WeatherRemoteSensing
+        ws = WeatherRemoteSensing(sim_mode=True)
+        reading = ws.estimate_wind(
+            imu_accel=np.array([0.1, 0.2, 9.81]),
+            imu_gyro=np.array([0.01]*3),
+            gps_velocity=np.array([1.0, 0.5, 0.0])
+        )
+        self.assertIsInstance(reading.wind_speed_ms, float)
+        self.assertTrue(0 <= reading.wind_direction_deg <= 360)
+    
+    def test_weather_forecast(self):
+        from weather_remote_sensing import WeatherRemoteSensing
+        ws = WeatherRemoteSensing(sim_mode=True)
+        for _ in range(5):
+            ws.estimate_wind(np.zeros(3), np.zeros(3), np.zeros(3))
+        forecast = ws.get_weather_forecast()
+        self.assertIn("trend", forecast)
+    
+    def test_water_analysis(self):
+        from weather_remote_sensing import WaterRemoteSensing
+        wr = WaterRemoteSensing(sim_mode=True)
+        frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        reading = wr.analyze_water(frame, altitude_m=10.0)
+        self.assertIsInstance(reading.water_body_detected, bool)
+
+
+class TestEnvironmentAnalyzer(unittest.TestCase):
+    """T54-T56: Environment Perception & Analysis"""
+    
+    def test_obstacle_detection(self):
+        from environment_analyzer import EnvironmentAnalyzer
+        ea = EnvironmentAnalyzer(sim_mode=True)
+        obstacles = ea.detect_obstacles()
+        self.assertIsInstance(obstacles, list)
+    
+    def test_terrain_analysis(self):
+        from environment_analyzer import EnvironmentAnalyzer
+        ea = EnvironmentAnalyzer(sim_mode=True)
+        terrain = ea.analyze_terrain()
+        self.assertEqual(terrain.elevation_map.shape, (20, 20))
+    
+    def test_risk_map(self):
+        from environment_analyzer import EnvironmentAnalyzer
+        ea = EnvironmentAnalyzer(sim_mode=True)
+        ea.detect_obstacles()
+        risk = ea.compute_risk_map()
+        self.assertEqual(risk.shape, (20, 20))
+        self.assertTrue(np.all(risk >= 0) and np.all(risk <= 1))
+    
+    def test_hazard_level(self):
+        from environment_analyzer import EnvironmentAnalyzer
+        ea = EnvironmentAnalyzer(sim_mode=True)
+        ea.detect_obstacles()
+        level = ea.get_hazard_level()
+        self.assertIn(level, ["LOW", "MEDIUM", "HIGH"])
+
+
+class TestPhysicsModeler(unittest.TestCase):
+    """T57-T59: Physical Environment Modeling"""
+    
+    def test_mesh_building(self):
+        from physics_modeler import PhysicsModeler
+        pm = PhysicsModeler(sim_mode=True)
+        pc = [np.random.rand(100, 3) * 10]
+        mesh = pm.build_mesh(pc)
+        self.assertIn("vertices", mesh)
+        self.assertIn("faces", mesh)
+    
+    def test_material_estimation(self):
+        from physics_modeler import PhysicsModeler
+        pm = PhysicsModeler(sim_mode=True)
+        frame = np.random.randint(0, 255, (120, 160, 3), dtype=np.uint8)
+        depth = np.random.rand(120, 160) * 10
+        mat = pm.estimate_material(frame, depth)
+        self.assertIn("type", mat)
+        self.assertIn("roughness", mat)
+    
+    def test_physics_simulation(self):
+        from physics_modeler import PhysicsModeler
+        pm = PhysicsModeler(sim_mode=True)
+        state = np.zeros(6)  # [pos(3), vel(3)]
+        state[3:6] = [1.0, 0.0, 0.0]  # Initial velocity
+        trajectory = pm.simulate_physics(state, np.zeros(3), dt=0.01, steps=100)
+        self.assertEqual(len(trajectory), 101)
+        self.assertTrue(trajectory[-1][0] > 0)  # Moved in x
+
+
+class TestWorldModel(unittest.TestCase):
+    """T60-T62: World Model Prediction & Interaction"""
+    
+    def test_agent_prediction(self):
+        from world_model import WorldModel
+        wm = WorldModel(sim_mode=True)
+        pred = wm.predict_agent("person_1", np.array([5, 0, 0]), np.array([0.5, 0, 0]))
+        self.assertEqual(pred.agent_id, "person_1")
+        self.assertTrue(len(pred.predicted_positions) > 0)
+    
+    def test_event_forecast(self):
+        from world_model import WorldModel
+        wm = WorldModel(sim_mode=True)
+        forecast = wm.forecast_event("wind_gust", {"current_wind": 5.0})
+        self.assertIn("probability", forecast)
+    
+    def test_what_if_reasoning(self):
+        from world_model import WorldModel
+        wm = WorldModel(sim_mode=True)
+        result = wm.what_if("battery_low", {"battery": 15})
+        self.assertIn("risk", result)
+        self.assertIn("mitigation", result)
+    
+    def test_risk_assessment(self):
+        from world_model import WorldModel, AgentPrediction
+        wm = WorldModel(sim_mode=True)
+        pred = wm.predict_agent("car_1", np.array([3, 0, 0]), np.array([2, 0, 0]))
+        risk = wm.assess_risk([pred])
+        self.assertIn("level", risk)
+        self.assertIn(risk["level"], ["LOW", "MEDIUM", "HIGH"])
+
+
+class TestEarlyWarning(unittest.TestCase):
+    """T63-T66: Early Warning System"""
+    
+    def test_battery_warning(self):
+        from early_warning import EarlyWarningSystem, WarningLevel
+        ew = EarlyWarningSystem()
+        warnings = ew.check_battery(15.0)
+        self.assertTrue(any(w.level == WarningLevel.WARNING for w in warnings))
+    
+    def test_geofence_warning(self):
+        from early_warning import EarlyWarningSystem, WarningLevel
+        ew = EarlyWarningSystem()
+        warnings = ew.check_geofence(510.0)
+        self.assertTrue(any(w.level == WarningLevel.CRITICAL for w in warnings))
+    
+    def test_collision_warning(self):
+        from early_warning import EarlyWarningSystem, WarningLevel
+        ew = EarlyWarningSystem()
+        warnings = ew.check_collision(2.0)
+        self.assertTrue(any(w.level == WarningLevel.EMERGENCY for w in warnings))
+    
+    def test_check_all(self):
+        from early_warning import EarlyWarningSystem
+        ew = EarlyWarningSystem()
+        warnings = ew.check_all(battery_pct=50, distance_m=100, 
+                                wind_ms=5, vis_km=10, nearest_obstacle_m=20)
+        self.assertIsInstance(warnings, list)
+        # Normal conditions = no warnings
+        self.assertEqual(len(warnings), 0)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
